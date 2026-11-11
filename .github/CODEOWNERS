@@ -33,3 +33,9 @@
 /CLAUDE.md                                  @edbron
 /AGENTS.md                                  @edbron
 /docs/                                      @edbron
+
+# ---- app store: submissions and the gates that check them -----------------
+/apps/                                      @edbron
+/tools/lib/gates.sh                         @edbron
+/tools/verify-submission.sh                 @edbron
+/.github/workflows/                         @edbron

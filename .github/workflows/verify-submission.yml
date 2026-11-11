@@ -1,0 +1,49 @@
+name: verify
+on:
+  pull_request:
+    paths:
+      - 'apps/**'
+      - 'tools/lib/gates.sh'
+      - 'tools/verify-submission.sh'
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+      options: --privileged     # extra-x86_64-build needs to set up a chroot
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gate tooling
+        run: |
+          pacman -Syu --noconfirm namcap devtools appstream clamav bats git
+          freshclam || echo "clamav signature update failed; G7 will report it"
+
+      - name: Find the submissions this PR touches
+        id: subs
+        run: |
+          base=$(git merge-base origin/${{ github.base_ref }} HEAD)
+          dirs=$(git diff --name-only "$base" HEAD -- apps/ \
+                 | grep -v '^apps/template/' \
+                 | cut -d/ -f1-2 | sort -u)
+          echo "dirs<<EOF" >>"$GITHUB_OUTPUT"
+          echo "$dirs"     >>"$GITHUB_OUTPUT"
+          echo "EOF"       >>"$GITHUB_OUTPUT"
+
+      - name: Run the gate suite
+        run: |
+          status=0
+          while read -r d; do
+            [ -n "$d" ] || continue
+            [ -d "$d" ] || continue
+            echo "::group::$d"
+            ./tools/verify-submission.sh "$d" || status=1
+            echo "::endgroup::"
+          done <<< "${{ steps.subs.outputs.dirs }}"
+          exit $status
+
+      - name: Gate tests still pass
+        run: bats tests/gates.bats
