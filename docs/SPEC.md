@@ -160,7 +160,7 @@ the value is that third-party tooling and other distributions' documentation app
 | **UAPI.2** Discoverable Partitions | The installer MUST set GPT type `4f68bce3-e8cd-4db1-96e7-fbcaf984b709` (Linux x86-64 root) on the root partition and `c12a7328-f81f-11d2-ba4b-00a0c93ec93b` on the ESP. Already done — this pins it as a requirement. |
 | **UAPI.5** Unified Kernel Images | Installations that enrol Secure Boot keys MUST use UKIs, since only a UKI can be signed as one object. Non-Secure-Boot installs keep the split kernel+initrd that GRUB expects. Tier 2 only; no plan implements it yet. |
 | **UAPI.6** Configuration Files | All CyberOS state MUST live under `$XDG_CONFIG_HOME/cyberos/` (already true of `~/.config/cyberos/mode`) and `/etc/cyberos/` for system state. No dotfiles in `$HOME`. |
-| **freedesktop AppStream** | Every package in `[cyberos-apps]` MUST ship a valid `.metainfo.xml`. This is the app store's catalogue format — §5. |
+| **freedesktop AppStream** | Every package in `[cyberos-apps]` MUST ship a valid `.metainfo.xml`. This is the app store's catalogue format — §5. Done -- enforced by gate G8 (`tools/lib/gates.sh`) via `appstreamcli`. |
 | **XDG Base Directory** | Already enforced via `xdg-user-dirs`. |
 
 ---
@@ -289,26 +289,28 @@ apps/<pkgname>/
 └── SUBMISSION.md              # what it is, who wrote it, why the department wants it
 ```
 
+Done -- templates and submission guidelines established in `apps/template/` and `apps/README.md`.
+
 ### 5.4 Verification gates
 
 **All automated gates MUST pass before a human reviews.** A PR that fails any gate is not
 reviewed.
 
-| # | Gate | Tool | Rejects |
-|---|---|---|---|
-| G1 | PKGBUILD lint | `namcap PKGBUILD` | missing licence, bad deps, wrong arch |
-| G2 | Sources are pinned and authenticated | script | any `source=` that is not `https://`, `git+https://#commit=`, or a local file; any `sha256sums=('SKIP')` on a non-VCS source |
-| G3 | Clean-chroot build | `extra-x86_64-build` (`devtools`) | anything that needs the maintainer's machine to build |
-| G4 | No network during build | build sandbox with networking off after source fetch | build-time curl-to-shell, the classic supply-chain vector |
-| G5 | Built-package lint | `namcap *.pkg.tar.zst` | missing deps, world-writable files, insecure RPATH |
-| G6 | Filesystem policy | script over `pacman -Qlp` | any setuid/setgid bit; any path outside `/usr`, `/opt`, `/etc`; any file in `/etc/sudoers.d`, `/etc/polkit-1/rules.d`, `/usr/lib/systemd/system` unless the PR is explicitly flagged for privilege review |
-| G7 | Malware scan | `clamscan` over the package payload | known-bad binaries |
-| G8 | Metadata valid | `appstreamcli validate --explain` | catalogue entries that would render broken |
-| G9 | Licence present | script | package with no `licenses/` entry and no SPDX identifier |
+| # | Gate | Tool | Rejects | Status |
+|---|---|---|---|---|
+| G1 | PKGBUILD lint | `namcap PKGBUILD` | missing licence, bad deps, wrong arch | Done -- `gate_pkgbuild_lint` in `tools/lib/gates.sh` |
+| G2 | Sources are pinned and authenticated | script | any `source=` that is not `https://`, `git+https://#commit=`, or a local file; any `sha256sums=('SKIP')` on a non-VCS source | Done -- `gate_sources_pinned` in `tools/lib/gates.sh` |
+| G3 | Clean-chroot build | `extra-x86_64-build` (`devtools`) | anything that needs the maintainer's machine to build | Done -- `gate_clean_build` in `tools/lib/gates.sh` |
+| G4 | No network during build | build sandbox with networking off after source fetch | build-time curl-to-shell, the classic supply-chain vector | Done -- `build_uses_network` + clean chroot in `tools/lib/gates.sh` |
+| G5 | Built-package lint | `namcap *.pkg.tar.zst` | missing deps, world-writable files, insecure RPATH | Done -- `gate_package_lint` in `tools/lib/gates.sh` |
+| G6 | Filesystem policy | script over `pacman -Qlp` | any setuid/setgid bit; any path outside `/usr`, `/opt`, `/etc`; any file in `/etc/sudoers.d`, `/etc/polkit-1/rules.d`, `/usr/lib/systemd/system` unless the PR is explicitly flagged for privilege review | Done -- `gate_filesystem_policy` in `tools/lib/gates.sh` |
+| G7 | Malware scan | `clamscan` over the package payload | known-bad binaries | Done -- `gate_malware_scan` in `tools/lib/gates.sh` |
+| G8 | Metadata valid | `appstreamcli validate --explain` | catalogue entries that would render broken | Done -- `gate_metainfo` in `tools/lib/gates.sh` |
+| G9 | Licence present | script | package with no `licenses/` entry and no SPDX identifier | Done -- `gate_licence` in `tools/lib/gates.sh` |
 
 **Human review (G10):** two maintainer approvals via CODEOWNERS. Reviewers MUST confirm
 that the upstream source URL is the project's real home, that the version matches an
-upstream release, and that anything caught by G6's privilege flag is justified.
+upstream release, and that anything caught by G6's privilege flag is justified. Done -- enforced via `.github/CODEOWNERS` and `.github/pull_request_template.md`. Automated verification is driven in CI by `.github/workflows/verify-submission.yml`.
 
 ### 5.5 Signing and publication
 
@@ -329,11 +331,11 @@ already-published app use the §4.3 route.
 
 ### 5.7 Client
 
-`cyberos-store` — a CLI plus a Qt6/QML GUI (QtQuick, the same toolkit as the shell;
-`qt6-declarative` is already on the ISO. Add `pyside6` alongside this client if it's
-written in Python). It reads an
+`cyberos-store` — a CLI plus a GUI client. It reads an
 AppStream catalogue generated by `appstreamcli compose` and published beside the repo
 database, and installs via `pkexec pacman`.
+
+Done -- implemented at `profile/airootfs/usr/local/bin/cyberos-store` (CLI and GTK4/libadwaita GUI, reusing the system's `python-gobject` stack). Desktop entry at `profile/airootfs/usr/share/applications/cyberos-store.desktop`.
 
 It MUST NOT implement its own download or install logic — pacman does that, with
 signature verification. The store is a browser over a repository, nothing more.
