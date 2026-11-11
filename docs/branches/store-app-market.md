@@ -1,6 +1,6 @@
 # Branch: `store/app-market`
 
-**State:** planned · **Owner:** store owner · **Spec:** `docs/SPEC.md` §5
+**State:** in progress (Tasks 1–4, 6 implemented and tested; Task 5 publishing awaits D1/D2) · **Owner:** store owner · **Spec:** `docs/SPEC.md` §5
 **Plan:** `docs/superpowers/plans/2026-08-30-app-store.md`
 
 ## Charter

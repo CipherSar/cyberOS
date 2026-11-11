@@ -28,7 +28,9 @@ branch, add its charter in the same commit as the first piece of work.
 | `theme/lua-config` | merged (PR #8) | see the "Follow-up work" note in [theme-macos-palette.md](theme-macos-palette.md) — no separate charter was opened for this one |
 | `shell/quickshell` | merged (PR #9) | [shell-quickshell.md](shell-quickshell.md) |
 | `packages/repo-publishing` | open, PR #1 closed unmerged | [packages-repo-publishing.md](packages-repo-publishing.md) |
-| `docs/contributor-guidance` | open, not yet merged | [docs-contributor-guidance.md](docs-contributor-guidance.md) |
+| `docs/contributor-guidance` | merged into `main` | [docs-contributor-guidance.md](docs-contributor-guidance.md) |
+| `channels/release-engineering` | open, in progress | [channels-release-engineering.md](channels-release-engineering.md) |
+| `store/app-market` | open, in progress | [store-app-market.md](store-app-market.md) |
 
 ## Planned branches
 
@@ -36,8 +38,6 @@ These implement `docs/SPEC.md` and do not exist yet.
 
 | Branch | Charter | Plan |
 |---|---|---|
-| `channels/release-engineering` | [channels-release-engineering.md](channels-release-engineering.md) | `docs/superpowers/plans/2026-08-30-release-channels.md` |
-| `store/app-market` | [store-app-market.md](store-app-market.md) | `docs/superpowers/plans/2026-08-30-app-store.md` |
 | `docs/handbook` | [docs-handbook.md](docs-handbook.md) | — |
 
 ## Naming reference
