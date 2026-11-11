@@ -1,0 +1,30 @@
+# Maintainer: Your Name <you@example.org>
+#
+# CyberOS app submission. Read apps/README.md before editing this.
+#   - source= must be https with a checksum, or git+https pinned to a commit
+#   - no setuid/setgid files, nothing outside /usr, /opt, /etc
+#   - the build must not touch the network after sources are fetched
+pkgname=
+pkgver=
+pkgrel=1
+pkgdesc=""
+arch=('x86_64')
+url=""
+license=('')
+depends=()
+makedepends=()
+source=("")
+sha256sums=('')
+
+build() {
+  cd "$pkgname-$pkgver"
+  ./configure --prefix=/usr
+  make
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  make DESTDIR="$pkgdir" install
+  install -Dm644 "$srcdir/$pkgname.metainfo.xml" \
+    "$pkgdir/usr/share/metainfo/$pkgname.metainfo.xml"
+}
