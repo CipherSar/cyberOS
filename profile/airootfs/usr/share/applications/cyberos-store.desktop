@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=CyberOS Store
+Comment=Install department-verified apps and plugins
+Exec=cyberos-store --gui
+Icon=system-software-install
+Terminal=false
+Categories=System;PackageManager;

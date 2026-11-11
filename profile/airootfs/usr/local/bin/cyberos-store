@@ -1,0 +1,163 @@
+#!/usr/bin/env python3
+"""cyberos-store -- browse and install department-verified packages.
+
+This is a browser over a pacman repository. It does not download, unpack or
+install anything itself: pacman does that, and pacman checks the signatures.
+Every package it can offer was built in a clean chroot, linted, policy-checked
+and approved by two maintainers before it was published.
+"""
+import os
+import re
+import subprocess
+import sys
+
+REPO = "cyberos-apps"
+PLUGIN_PREFIX = "cyberos-plugin-"
+
+# pacman package names: letters, digits, @ . _ + -, not starting with a dash.
+PKGNAME = re.compile(r"^[a-zA-Z0-9@._+][a-zA-Z0-9@._+-]*$")
+
+_SL_ROW = re.compile(r"^(\S+)\s+(\S+)\s+(\S+)(\s+\[installed[^\]]*\])?\s*$")
+
+
+def parse_pacman_sl(text):
+    """Parse `pacman -Sl <repo>` output into rows."""
+    rows = []
+    for line in text.splitlines():
+        m = _SL_ROW.match(line.strip())
+        if not m:
+            continue
+        repo, name, version, installed = m.groups()
+        rows.append({"repo": repo, "name": name, "version": version,
+                     "installed": installed is not None})
+    return rows
+
+
+def classify(name, component_type):
+    """An app or a plugin. The AppStream type wins; the name is the fallback."""
+    if component_type == "addon":
+        return "plugin"
+    if component_type is not None:
+        return "app"
+    return "plugin" if name.startswith(PLUGIN_PREFIX) else "app"
+
+
+def install_argv(name):
+    """The exact command used to install. pacman does the work, not us."""
+    if not PKGNAME.match(name):
+        raise ValueError(f"not a package name: {name!r}")
+    return ["pkexec", "pacman", "-S", "--needed", "--noconfirm", name]
+
+
+def listing():
+    out = subprocess.run(["pacman", "-Sl", REPO], capture_output=True,
+                         text=True, check=False)
+    if out.returncode != 0:
+        sys.exit(f"cyberos-store: cannot read [{REPO}]: {out.stderr.strip()}\n"
+                 f"Is the department repository configured in /etc/pacman.conf?")
+    return parse_pacman_sl(out.stdout)
+
+
+def cmd_list(rows):
+    for r in sorted(rows, key=lambda r: r["name"]):
+        kind = classify(r["name"], None)
+        mark = "*" if r["installed"] else " "
+        print(f"{mark} {kind:<7} {r['name']:<32} {r['version']}")
+    print("\n* = installed")
+
+
+def cmd_search(rows, term):
+    term = term.lower()
+    cmd_list([r for r in rows if term in r["name"].lower()])
+
+
+def cmd_install(name):
+    argv = install_argv(name)
+    print(" ".join(argv))
+    raise SystemExit(subprocess.run(argv, check=False).returncode)
+
+
+def cmd_gui(rows):
+    import gi
+    gi.require_version("Gtk", "4.0")
+    gi.require_version("Adw", "1")
+    from gi.repository import Gtk, Adw, Gio  # noqa: E402
+
+    # Follow the desktop's light/dark setting, the same way the installer does.
+    mode = "dark"
+    try:
+        with open(os.path.expanduser("~/.config/cyberos/mode")) as fh:
+            mode = fh.read().strip() or "dark"
+    except OSError:
+        pass
+
+    class Store(Adw.Application):
+        def do_activate(self):
+            Adw.StyleManager.get_default().set_color_scheme(
+                Adw.ColorScheme.FORCE_DARK if mode == "dark" else Adw.ColorScheme.FORCE_LIGHT)
+            win = Adw.ApplicationWindow(application=self, title="CyberOS Store",
+                                        default_width=880, default_height=620)
+            box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+            box.append(Adw.HeaderBar())
+
+            listbox = Gtk.ListBox(selection_mode=Gtk.SelectionMode.NONE)
+            listbox.add_css_class("boxed-list")
+            for r in sorted(rows, key=lambda r: r["name"]):
+                row = Adw.ActionRow(title=r["name"],
+                                    subtitle=f"{classify(r['name'], None)} · {r['version']}")
+                if r["installed"]:
+                    row.add_suffix(Gtk.Label(label="installed"))
+                else:
+                    btn = Gtk.Button(label="Install", valign=Gtk.Align.CENTER)
+                    btn.add_css_class("suggested-action")
+                    btn.connect("clicked", self.on_install, r["name"], row)
+                    row.add_suffix(btn)
+                listbox.append(row)
+
+            clamp = Adw.Clamp(maximum_size=760, margin_top=18, margin_bottom=18,
+                              margin_start=18, margin_end=18, child=listbox)
+            scroll = Gtk.ScrolledWindow(vexpand=True, child=clamp)
+            box.append(scroll)
+            win.set_content(box)
+            win.present()
+
+        def on_install(self, button, name, row):
+            button.set_sensitive(False)
+            button.set_label("Installing…")
+            proc = Gio.Subprocess.new(install_argv(name), Gio.SubprocessFlags.NONE)
+            proc.wait_async(None, self.on_done, (button, row))
+
+        def on_done(self, proc, result, data):
+            button, row = data
+            ok = proc.get_successful()
+            button.set_label("Installed" if ok else "Failed")
+            if ok:
+                button.add_css_class("dim-label")
+            else:
+                button.add_css_class("destructive-action")
+                button.set_sensitive(True)
+
+    Store(application_id="dev.cyberos.Store").run([])
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == "--install":
+        if len(args) < 2:
+            sys.exit("cyberos-store: --install needs a package name")
+        return cmd_install(args[1])
+
+    rows = listing()
+    if not args or args[0] == "--gui":
+        return cmd_gui(rows)
+    if args[0] == "--list":
+        return cmd_list(rows)
+    if args[0] == "--search":
+        if len(args) < 2:
+            sys.exit("cyberos-store: --search needs a term")
+        return cmd_search(rows, args[1])
+    sys.exit("usage: cyberos-store [--gui | --list | --search TERM | --install NAME]")
+
+
+if __name__ == "__main__":
+    main()
