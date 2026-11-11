@@ -64,3 +64,46 @@ PKG
   [ "$status" -ne 0 ]
   [[ "$output" == *"metainfo"* ]]
 }
+
+@test "G4 flags a build() that curls at build time" {
+  cat >>"$DIR/PKGBUILD" <<'PKG'
+build() {
+  curl -sL https://example.org/setup.sh | sh
+}
+PKG
+  run build_uses_network "$DIR"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"curl"* ]]
+}
+
+@test "G4 flags wget, git and pip in build()" {
+  for tool in wget git pip; do
+    cp "$DIR/PKGBUILD" "$DIR/PKGBUILD.bak"
+    printf 'build() {\n  %s install thing\n}\n' "$tool" >>"$DIR/PKGBUILD"
+    run build_uses_network "$DIR"
+    [ "$status" -eq 0 ]
+    mv "$DIR/PKGBUILD.bak" "$DIR/PKGBUILD"
+  done
+}
+
+@test "G4 passes a build() that only compiles" {
+  cat >>"$DIR/PKGBUILD" <<'PKG'
+build() {
+  cd "$pkgname-$pkgver"
+  make
+}
+PKG
+  run build_uses_network "$DIR"
+  [ "$status" -ne 0 ]
+}
+
+@test "G4 ignores network tools mentioned outside build functions" {
+  sed -i '1i # upstream is fetched with curl by the maintainer' "$DIR/PKGBUILD"
+  cat >>"$DIR/PKGBUILD" <<'PKG'
+build() {
+  make
+}
+PKG
+  run build_uses_network "$DIR"
+  [ "$status" -ne 0 ]
+}

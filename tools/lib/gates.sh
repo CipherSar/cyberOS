@@ -80,3 +80,64 @@ gate_metainfo() {
   fi
   return 0
 }
+
+# build_uses_network <dir> -- exit 0 if build() or package() reference a network
+# tool. Curl-to-shell at build time is the classic supply-chain vector, and a
+# reviewer reading a 400-line PKGBUILD will miss it.
+build_uses_network() {
+  local dir=$1 body tool
+  # Extract only the bodies of build() and package(), so a comment or a source=
+  # URL elsewhere does not trip the check.
+  body=$(awk '
+    /^[[:space:]]*(build|package|prepare)[[:space:]]*\(\)[[:space:]]*\{/ { depth=1; next }
+    depth > 0 {
+      depth += gsub(/\{/, "{") - gsub(/\}/, "}")
+      if (depth <= 0) { depth = 0; next }
+      sub(/#.*/, "")
+      print
+    }
+  ' "$dir/PKGBUILD")
+
+  for tool in curl wget git svn hg pip npm "cargo fetch" "go get"; do
+    if grep -qE "(^|[;&|[:space:]])${tool}([[:space:]]|$)" <<<"$body"; then
+      printf 'G4: build functions call %s -- the build must not touch the network\n' "$tool"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# G3 + G4 -- build in a clean chroot with networking off after sources are
+# fetched. If it does not build here, it does not build on a student machine.
+gate_clean_build() {
+  local dir=$1
+  local outdir=${2:-$dir/out}
+  if build_uses_network "$dir"; then
+    _fail "G4: the build reaches the network"
+    return 1
+  fi
+  command -v extra-x86_64-build >/dev/null \
+    || { _fail "G3: devtools is not installed (need extra-x86_64-build)"; return 1; }
+
+  mkdir -p "$outdir"
+  local log="$outdir/build.log"
+  if ! ( cd "$dir" && PKGDEST="$(cd "$outdir" && pwd)" \
+           extra-x86_64-build -- -- --nocheck ) >"$log" 2>&1; then
+    _fail "G3: clean-chroot build failed, see $log"$'\n'"$(tail -30 "$log")"
+    return 1
+  fi
+  return 0
+}
+
+# G5 -- lint the built package, which catches what linting the recipe cannot:
+# missing runtime deps, world-writable files, insecure RPATH.
+gate_package_lint() {
+  local pkgfile=$1 out
+  [[ -f $pkgfile ]] || { _fail "G5: no package file at $pkgfile"; return 1; }
+  out=$(namcap "$pkgfile" 2>&1) || true
+  if grep -qE '\(E\)|ERROR' <<<"$out"; then
+    _fail "G5: namcap errors on the built package:"$'\n'"$out"
+    return 1
+  fi
+  return 0
+}

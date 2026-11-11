@@ -13,18 +13,33 @@ source "$HERE/lib/gates.sh"
 DIR=${1:-}
 [[ -d $DIR ]] || { printf 'usage: verify-submission.sh <submission-dir>\n' >&2; exit 2; }
 
-GATES=(gate_pkgbuild_lint gate_sources_pinned gate_licence gate_metainfo)
+STATIC_GATES=(gate_pkgbuild_lint gate_sources_pinned gate_licence gate_metainfo)
+BUILD_GATES=(gate_clean_build)
 
 failed=0
-for g in "${GATES[@]}"; do
+for g in "${STATIC_GATES[@]}"; do
   printf '=== %s\n' "$g"
-  if "$g" "$DIR"; then
-    printf '    pass\n'
-  else
-    printf '    FAIL\n'
-    failed=1
-  fi
+  if "$g" "$DIR"; then printf '    pass\n'; else printf '    FAIL\n'; failed=1; fi
 done
+
+if (( failed )); then
+  printf '\nStatic gates failed; not building. %s failure(s).\n' "${#GATE_FAILURES[@]}"
+  exit 1
+fi
+
+OUTDIR=${OUTDIR:-$DIR/out}
+for g in "${BUILD_GATES[@]}"; do
+  printf '=== %s\n' "$g"
+  if "$g" "$DIR" "$OUTDIR"; then printf '    pass\n'; else printf '    FAIL\n'; failed=1; fi
+done
+
+if (( failed == 0 )); then
+  shopt -s nullglob
+  for pkg in "$OUTDIR"/*.pkg.tar.zst; do
+    printf '=== gate_package_lint %s\n' "$(basename "$pkg")"
+    if gate_package_lint "$pkg"; then printf '    pass\n'; else printf '    FAIL\n'; failed=1; fi
+  done
+fi
 
 if (( failed )); then
   printf '\n%s gate(s) failed. A submission that fails a gate is not reviewed.\n' "${#GATE_FAILURES[@]}"
