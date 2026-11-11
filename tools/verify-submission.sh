@@ -36,8 +36,14 @@ done
 if (( failed == 0 )); then
   shopt -s nullglob
   for pkg in "$OUTDIR"/*.pkg.tar.zst; do
-    printf '=== gate_package_lint %s\n' "$(basename "$pkg")"
-    if gate_package_lint "$pkg"; then printf '    pass\n'; else printf '    FAIL\n'; failed=1; fi
+    for g in gate_package_lint gate_filesystem_policy gate_malware_scan; do
+      printf '=== %s %s\n' "$g" "$(basename "$pkg")"
+      if "$g" "$pkg" ${ALLOW_PRIVILEGED:+--allow-privileged}; then
+        printf '    pass\n'
+      else
+        printf '    FAIL\n'; failed=1
+      fi
+    done
   done
 fi
 

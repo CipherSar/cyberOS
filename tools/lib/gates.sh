@@ -141,3 +141,61 @@ gate_package_lint() {
   fi
   return 0
 }
+
+# G6 -- what the package puts on a student's disk.
+#
+# setuid is refused outright: no submission needs it, and a setuid binary in a
+# reviewed repository is a privilege-escalation primitive handed to every
+# student. Paths under sudoers.d, polkit rules and systemd units need the pull
+# request to be explicitly flagged for privilege review.
+gate_filesystem_policy() {
+  local pkgfile=$1
+  local allow_priv=0
+  [[ ${2:-} == --allow-privileged ]] && allow_priv=1
+  [[ -f $pkgfile ]] || { _fail "G6: no package file at $pkgfile"; return 1; }
+
+  local listing rc=0
+  listing=$(bsdtar -tvf "$pkgfile") || { _fail "G6: cannot read $pkgfile"; return 1; }
+
+  # setuid / setgid, from the mode column of the listing.
+  if grep -qE '^[-d][rwx-]{2}[sS][rwx-]{3}|^[-d][rwx-]{5}[sS]' <<<"$listing"; then
+    _fail "G6: package contains a setuid or setgid file"
+    rc=1
+  fi
+
+  local path
+  while read -r path; do
+    case $path in
+      .PKGINFO|.BUILDINFO|.MTREE|.INSTALL|./) continue ;;
+      usr/*|opt/*|etc/*) ;;
+      *) _fail "G6: file outside /usr, /opt and /etc: $path"; rc=1; continue ;;
+    esac
+    case $path in
+      etc/sudoers.d/*|etc/polkit-1/rules.d/*|usr/lib/systemd/system/*|etc/systemd/system/*)
+        if (( allow_priv )); then
+          printf 'G6: privileged path accepted under review: %s\n' "$path"
+        else
+          _fail "G6: privileged path needs an explicit privilege review: $path"
+          rc=1
+        fi ;;
+    esac
+  done < <(bsdtar -tf "$pkgfile" | sed 's@^\./@@' | grep -v '/$')
+
+  return $rc
+}
+
+# G7 -- scan the payload. It will not catch a targeted attack, but it catches a
+# submitter who packaged something they downloaded and did not read.
+gate_malware_scan() {
+  local pkgfile=$1 tmp out
+  command -v clamscan >/dev/null || { _fail "G7: clamav is not installed"; return 1; }
+  tmp=$(mktemp -d)
+  bsdtar -xf "$pkgfile" -C "$tmp" 2>/dev/null || true
+  if ! out=$(clamscan -ri --no-summary "$tmp" 2>&1); then
+    rm -rf "$tmp"
+    _fail "G7: clamav flagged the payload:"$'\n'"$out"
+    return 1
+  fi
+  rm -rf "$tmp"
+  return 0
+}

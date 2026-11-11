@@ -107,3 +107,52 @@ PKG
   run build_uses_network "$DIR"
   [ "$status" -ne 0 ]
 }
+
+mkpkg() {   # build a minimal .pkg.tar.zst containing the given paths
+  local out=$1; shift
+  local root="$BATS_TEST_TMPDIR/pkgroot.$$"
+  rm -rf "$root"; mkdir -p "$root"
+  printf 'pkgname = demo\npkgver = 1.0-1\narch = x86_64\n' >"$root/.PKGINFO"
+  local p
+  for p in "$@"; do
+    mkdir -p "$root/$(dirname "$p")"
+    printf 'x' >"$root/$p"
+  done
+  ( cd "$root" && bsdtar --zstd -cf "$out" .PKGINFO "${@}" )
+}
+
+@test "G6 accepts a package that stays in /usr" {
+  mkpkg "$BATS_TEST_TMPDIR/ok.pkg.tar.zst" usr/bin/demo usr/share/metainfo/demo.xml
+  run gate_filesystem_policy "$BATS_TEST_TMPDIR/ok.pkg.tar.zst"
+  [ "$status" -eq 0 ]
+}
+
+@test "G6 rejects a file outside /usr, /opt and /etc" {
+  mkpkg "$BATS_TEST_TMPDIR/bad.pkg.tar.zst" usr/bin/demo var/lib/demo/state
+  run gate_filesystem_policy "$BATS_TEST_TMPDIR/bad.pkg.tar.zst"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"var/lib"* ]]
+}
+
+@test "G6 rejects a sudoers drop-in without the privileged flag" {
+  mkpkg "$BATS_TEST_TMPDIR/sudo.pkg.tar.zst" usr/bin/demo etc/sudoers.d/demo
+  run gate_filesystem_policy "$BATS_TEST_TMPDIR/sudo.pkg.tar.zst"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"sudoers"* ]]
+}
+
+@test "G6 allows a sudoers drop-in when the PR is flagged for privilege review" {
+  mkpkg "$BATS_TEST_TMPDIR/sudo.pkg.tar.zst" usr/bin/demo etc/sudoers.d/demo
+  run gate_filesystem_policy "$BATS_TEST_TMPDIR/sudo.pkg.tar.zst" --allow-privileged
+  [ "$status" -eq 0 ]
+}
+
+@test "G6 rejects a setuid binary even when privileged review is allowed" {
+  local root="$BATS_TEST_TMPDIR/suid"; mkdir -p "$root/usr/bin"
+  printf 'pkgname = demo\n' >"$root/.PKGINFO"
+  printf 'x' >"$root/usr/bin/demo"; chmod 4755 "$root/usr/bin/demo"
+  ( cd "$root" && bsdtar --zstd -cf "$BATS_TEST_TMPDIR/suid.pkg.tar.zst" .PKGINFO usr )
+  run gate_filesystem_policy "$BATS_TEST_TMPDIR/suid.pkg.tar.zst" --allow-privileged
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"setuid"* ]]
+}
